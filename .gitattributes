@@ -1,0 +1,5 @@
+# .bat 파일은 CP949·CRLF 그대로 보관합니다 (바꾸면 cmd에서 한글이 깨짐).
+*.bat -text
+# 모델 파일은 바이너리입니다.
+*.pt binary
+*.bin binary

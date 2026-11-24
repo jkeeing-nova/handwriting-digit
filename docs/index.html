@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>손글씨 숫자 인식 (MNIST CNN)</title>
+<script src="recognizer.js"></script>
+<style>
+  body {
+    font-family: "맑은 고딕", "Malgun Gothic", sans-serif;
+    margin: 0; padding: 24px; background: #f7fafc; color: #1a202c;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  .화면 { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+  .설명 { font-size: 14px; margin: 0 0 6px; }
+  /* 그림판: 실제 크기는 280x280, 좁은 화면에서는 줄여서 보여 줍니다 */
+  #그림판 {
+    display: block; width: 280px; max-width: 80vw; aspect-ratio: 1;
+    background: black; cursor: crosshair; touch-action: none; border-radius: 4px;
+  }
+  button {
+    margin-top: 10px; font: inherit; font-size: 14px; padding: 6px 24px; cursor: pointer;
+  }
+  #결과 { font-size: 72px; font-weight: bold; width: 100px; text-align: center; line-height: 1.1; }
+  #확신도 { font-size: 13px; color: gray; text-align: center; min-height: 18px; margin-bottom: 8px; }
+  .막대줄 { display: flex; align-items: center; height: 20px; font-size: 13px; }
+  .막대줄 .숫자 { width: 16px; }
+  .막대줄 .바탕 { width: 160px; height: 12px; background: #edf2f7; margin: 0 6px; }
+  .막대줄 .막대 { height: 100%; width: 0; background: #a0aec0; }
+  .막대줄.최고 .막대 { background: #2b6cb0; }
+  .막대줄 .값 { font-size: 11px; color: gray; width: 36px; }
+  .작은글씨 { font-size: 12px; color: gray; margin: 10px 0 2px; }
+  #미리보기 { width: 84px; height: 84px; background: black; image-rendering: pixelated; }
+  #상태 { margin: -8px 0 16px; }
+  #오류 { color: #c53030; font-size: 13px; min-height: 18px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>손글씨 숫자 인식 (MNIST CNN)</h1>
+<p class="작은글씨" id="상태">모델을 불러오는 중입니다...</p>
+<div class="화면">
+  <div>
+    <p class="설명">여기에 숫자 하나를 쓰세요</p>
+    <canvas id="그림판" width="280" height="280"></canvas>
+    <button id="지우기">지우기</button>
+    <div class="작은글씨">마우스 오른쪽 버튼으로도 지울 수 있습니다.</div>
+    <div id="오류"></div>
+  </div>
+  <div>
+    <p class="설명">인식 결과</p>
+    <div id="결과">?</div>
+    <div id="확신도"></div>
+    <div id="막대들"></div>
+    <div class="작은글씨">모델이 보는 28x28 이미지</div>
+    <canvas id="미리보기" width="28" height="28"></canvas>
+  </div>
+</div>
+
+<script>
+// 데스크탑 버전(app.py)과 같은 값입니다. 그림판 좌표는 항상 0~280 기준으로 씁니다.
+const 캔버스_크기 = 280;
+const 펜_굵기 = 22;
+
+const 그림판 = document.getElementById("그림판");
+const 붓 = 그림판.getContext("2d");
+const 미리보기 = document.getElementById("미리보기");
+const 막대들 = document.getElementById("막대들");
+
+let 획_목록 = [];     // 지금까지 그린 획들 (획 하나 = 점 좌표 목록)
+let 현재_획 = null;    // 지금 그리고 있는 획
+
+// 숫자 0~9 확률 막대를 만듭니다.
+for (let 숫자 = 0; 숫자 < 10; 숫자++) {
+  막대들.insertAdjacentHTML("beforeend",
+    `<div class="막대줄" id="줄${숫자}"><span class="숫자">${숫자}</span>` +
+    `<span class="바탕"><div class="막대"></div></span><span class="값">0%</span></div>`);
+}
+
+// 화면에 보이는 크기가 달라도(휴대폰 등) 0~280 좌표로 바꿉니다.
+function 좌표_구하기(이벤트) {
+  const 영역 = 그림판.getBoundingClientRect();
+  return [
+    (이벤트.clientX - 영역.left) * 캔버스_크기 / 영역.width,
+    (이벤트.clientY - 영역.top) * 캔버스_크기 / 영역.height,
+  ];
+}
+
+function 점_찍기(x, y) {
+  붓.fillStyle = "white";
+  붓.beginPath();
+  붓.arc(x, y, 펜_굵기 / 2, 0, Math.PI * 2);
+  붓.fill();
+}
+
+function 선_긋기(이전, 현재) {
+  붓.strokeStyle = "white";
+  붓.lineWidth = 펜_굵기;
+  붓.lineCap = "round";
+  붓.beginPath();
+  붓.moveTo(이전[0], 이전[1]);
+  붓.lineTo(현재[0], 현재[1]);
+  붓.stroke();
+  점_찍기(현재[0], 현재[1]);
+}
+
+// 마우스·터치·펜을 모두 받기 위해 pointer 이벤트를 씁니다.
+그림판.addEventListener("pointerdown", (이벤트) => {
+  if (이벤트.button === 2) return;  // 오른쪽 버튼은 지우기
+  그림판.setPointerCapture(이벤트.pointerId);
+  const 점 = 좌표_구하기(이벤트);
+  현재_획 = [점];
+  점_찍기(점[0], 점[1]);
+});
+
+그림판.addEventListener("pointermove", (이벤트) => {
+  if (!현재_획) return;
+  const 점 = 좌표_구하기(이벤트);
+  선_긋기(현재_획[현재_획.length - 1], 점);
+  현재_획.push(점);
+});
+
+function 그리기_끝() {
+  if (!현재_획) return;
+  획_목록.push(현재_획);
+  현재_획 = null;
+  인식하기();  // 손을 떼면 바로 인식합니다.
+}
+그림판.addEventListener("pointerup", 그리기_끝);
+그림판.addEventListener("pointercancel", 그리기_끝);
+
+그림판.addEventListener("contextmenu", (이벤트) => {
+  이벤트.preventDefault();
+  지우기();
+});
+document.getElementById("지우기").addEventListener("click", 지우기);
+
+function 지우기() {
+  획_목록 = [];
+  현재_획 = null;
+  붓.clearRect(0, 0, 캔버스_크기, 캔버스_크기);
+  미리보기.getContext("2d").clearRect(0, 0, 28, 28);
+  document.getElementById("결과").textContent = "?";
+  document.getElementById("확신도").textContent = "";
+  document.getElementById("오류").textContent = "";
+  막대_그리기(new Array(10).fill(0));
+}
+
+// 서버 없이 브라우저 안에서 인식합니다 (recognizer.js).
+let 모델 = null;
+손글씨인식.모델_불러오기().then((불러온_모델) => {
+  모델 = 불러온_모델;
+  document.getElementById("상태").textContent =
+    "준비 완료 - 숫자 인식은 이 브라우저 안에서만 계산하고, 그린 글씨는 어디에도 보내지 않습니다.";
+  if (획_목록.length) 인식하기();
+}).catch((오류) => {
+  document.getElementById("상태").textContent = "";
+  document.getElementById("오류").textContent = "모델 파일을 불러오지 못했습니다. (" + 오류.message + ")";
+});
+
+function 인식하기() {
+  if (!모델) return;  // 모델을 다 불러오면 그때 인식합니다.
+  const 결과 = 손글씨인식.숫자_인식하기(모델, 손글씨인식.획으로_그림_만들기(획_목록));
+  if (!결과) return;
+  const 숫자 = 결과.확률.indexOf(Math.max(...결과.확률));
+  document.getElementById("결과").textContent = 숫자;
+  document.getElementById("확신도").textContent = `확신도 ${(결과.확률[숫자] * 100).toFixed(1)}%`;
+  막대_그리기(결과.확률);
+  미리보기_그리기(Array.from(결과.작은_그림));
+}
+
+function 막대_그리기(확률) {
+  const 합 = 확률.reduce((a, b) => a + b, 0);
+  const 최고 = 합 > 0 ? 확률.indexOf(Math.max(...확률)) : -1;
+  for (let 숫자 = 0; 숫자 < 10; 숫자++) {
+    const 줄 = document.getElementById(`줄${숫자}`);
+    줄.classList.toggle("최고", 숫자 === 최고);
+    줄.querySelector(".막대").style.width = `${확률[숫자] * 100}%`;
+    줄.querySelector(".값").textContent = `${Math.round(확률[숫자] * 100)}%`;
+  }
+}
+
+// 28x28 밝기 값(784개)을 그대로 그립니다. CSS로 3배 확대해서 보입니다.
+function 미리보기_그리기(밝기들) {
+  const 작은붓 = 미리보기.getContext("2d");
+  const 이미지 = 작은붓.createImageData(28, 28);
+  밝기들.forEach((밝기, i) => {
+    이미지.data.set([밝기, 밝기, 밝기, 255], i * 4);
+  });
+  작은붓.putImageData(이미지, 0, 0);
+}
+</script>
+<p class="작은글씨" style="margin-top:32px">MNIST 데이터로 학습한 PyTorch CNN 모델을 JavaScript로 옮겨 실행합니다.
+  데스크탑 프로그램과 소스 코드는 저장소의 README를 참고하세요.</p>
+</body>
+</html>
