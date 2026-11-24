@@ -55,7 +55,8 @@
 
 ## 3. GitHub Pages 버전 (설치 없이 브라우저만)
 
-- 저장소의 GitHub Pages 주소(`https://<아이디>.github.io/<저장소이름>/`)로 접속하면 바로 쓸 수 있습니다.
+- **https://jkeeing-nova.github.io/handwriting-digit/** 에 접속하면 바로 쓸 수 있습니다.
+- GitHub 저장소 설정에서 Pages는 `main` 브랜치의 `/docs` 폴더로 켜져 있습니다. `docs/`를 바꿔서 올리면(push) 1~2분 뒤 반영됩니다.
 - Python 서버 없이, 학습된 모델 값을 내려받아 **브라우저 안에서** 계산합니다. 그린 글씨는 어디에도 보내지 않습니다.
 - 파일: `docs/index.html`(화면), `docs/recognizer.js`(인식), `docs/model.json`·`docs/model.bin`(학습된 모델 값, 약 1.6MB)
 - 내 컴퓨터에서 미리 보려면 (`file://`로 직접 열면 모델 파일을 못 읽으므로 간단한 서버가 필요):
