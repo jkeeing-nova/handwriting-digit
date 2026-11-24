@@ -11,6 +11,8 @@
 
 1번과 2번은 같은 인식 코드(`recognizer.py`)를 씁니다. 3번은 같은 처리 순서를 JavaScript(`docs/recognizer.js`)로 옮긴 것입니다.
 
+> 📝 이 프로젝트는 Claude Code에 프롬프트를 입력해서 만들었습니다. 사용한 프롬프트는 **[만든 과정 (PROMPTS.md)](PROMPTS.md)**에 있습니다.
+
 ## 준비
 
 - 프로젝트 가상환경 `.venv`(Python 3.12, torch CPU, numpy, pillow)가 있어야 합니다.
